@@ -63,6 +63,8 @@ You can use `parser.allowTypes` to parse types for local vars, exceptions, funct
 
 You can use `parser.allowMetadata` to parse metadata before expressions on in anonymous types. Metadata are ignored by the interpreter.
 
+You can use Haxe-style conditional directives in scripts: `#if`, `#elseif`, `#else` and `#end`. Define values before parsing with `parser.preprocesorValues.set("FEATURE", true)`. Conditions support `!`, `&&`, `||`, comparisons and `defined("FEATURE")`.
+
 You can use `new hscript.Macro(pos).convert(ast)` to convert an hscript AST to a Haxe macros one.
 
 You can use `hscript.Checker` in order to type check and even get completion, using `haxe -xml` output for type information.

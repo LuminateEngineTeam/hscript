@@ -1664,11 +1664,11 @@ class Parser {
 				invalidChar(char);
 			case '#'.code:
 				char = readChar();
-				if( idents[char] ) {
+				if( !StringTools.isEof(char) && idents[char] ) {
 					var id = String.fromCharCode(char);
 					while( true ) {
 						char = readChar();
-						if( !idents[char] ) {
+						if( StringTools.isEof(char) || !idents[char] ) {
 							this.char = char;
 							return preprocess(id);
 						}
@@ -1720,27 +1720,46 @@ class Parser {
 		return preprocesorValues.get(id);
 	}
 
+	function preprocDefined( id : String ) {
+		return preprocesorValues.exists(id);
+	}
+
 	var preprocStack : Array<{ r : Bool }>;
 
 	function parsePreproCond() {
-		var tk = token();
-		return switch( tk ) {
-		case TPOpen:
-			push(TPOpen);
-			parseExpr();
-		case TId(id):
-			mk(EIdent(id), tokenMin, tokenMax);
-		case TOp("!"):
-			mk(EUnop("!", true, parsePreproCond()), tokenMin, tokenMax);
-		default:
-			unexpected(tk);
-		}
+		return parseExpr();
 	}
 
 	function evalPreproCond( e : Expr ) {
 		switch( expr(e) ) {
 		case EIdent(id):
-			return preprocValue(id) != null;
+			return switch( id ) {
+			case "true": true;
+			case "false": false;
+			default: preprocDefined(id) && preprocValue(id) != false;
+			};
+		case EConst(c):
+			switch( c ) {
+			case CInt(v): return v != 0;
+			case CFloat(v): return v != 0;
+			case CString(v): return v.length > 0;
+			}
+		case ECall(e, args):
+			switch( expr(e) ) {
+			case EIdent("defined"):
+				if( args.length != 1 )
+					error(EInvalidPreprocessor("defined expects one argument"), currentPos, currentPos);
+				return switch( expr(args[0]) ) {
+				case EIdent(id): preprocDefined(id);
+				case EConst(CString(id)): preprocDefined(id);
+				default:
+					error(EInvalidPreprocessor("defined expects an identifier or string"), currentPos, currentPos);
+					false;
+				};
+			default:
+				error(EInvalidPreprocessor("Can't eval call"), currentPos, currentPos);
+				return false;
+			}
 		case EUnop("!", _, e):
 			return !evalPreproCond(e);
 		case EParent(e):
@@ -1749,9 +1768,34 @@ class Parser {
 			return evalPreproCond(e1) && evalPreproCond(e2);
 		case EBinop("||", e1, e2):
 			return evalPreproCond(e1) || evalPreproCond(e2);
+		case EBinop(op, e1, e2) if( op == "==" || op == "!=" || op == ">" || op == ">=" || op == "<" || op == "<=" ):
+			var v1 = evalPreproValue(e1);
+			var v2 = evalPreproValue(e2);
+			return switch( op ) {
+			case "==": v1 == v2;
+			case "!=": v1 != v2;
+			case ">": v1 > v2;
+			case ">=": v1 >= v2;
+			case "<": v1 < v2;
+			case "<=": v1 <= v2;
+			default: false;
+			};
 		default:
 			error(EInvalidPreprocessor("Can't eval " + expr(e).getName()), currentPos, currentPos);
 			return false;
+		}
+	}
+
+	function evalPreproValue( e : Expr ) : Dynamic {
+		switch( expr(e) ) {
+		case EIdent(id): return preprocValue(id);
+		case EConst(CInt(v)): return v;
+		case EConst(CFloat(v)): return v;
+		case EConst(CString(v)): return v;
+		case EParent(e): return evalPreproValue(e);
+		default:
+			error(EInvalidPreprocessor("Can't compare " + expr(e).getName()), currentPos, currentPos);
+			return null;
 		}
 	}
 
@@ -1783,6 +1827,9 @@ class Parser {
 		case "end" if( preprocStack.length > 0 ):
 			preprocStack.pop();
 			return token();
+		case "else", "elseif", "end":
+			error(EInvalidPreprocessor("Unexpected #" + id), currentPos, currentPos);
+			return token();
 		default:
 			return TPrepro(id);
 		}
@@ -1794,12 +1841,12 @@ class Parser {
 		var pos = currentPos;
 		while( true ) {
 			var tk = token();
-			if( tk == TEof )
-				error(EInvalidPreprocessor("Unclosed"), pos, pos);
 			if( preprocStack[spos] != obj ) {
 				push(tk);
 				break;
 			}
+			if( tk == TEof )
+				error(EInvalidPreprocessor("Unclosed"), pos, pos);
 		}
 	}
 

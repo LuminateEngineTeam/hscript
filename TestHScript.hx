@@ -33,8 +33,22 @@ class TestHScript extends TestCase {
 		assertEquals(v, ret, pos);
 	}
 
+	function assertPreprocessed(x:String, v:Dynamic, values:Map<String,Dynamic>, ?pos:haxe.PosInfos) {
+		var p = new hscript.Parser();
+		for (key in values.keys())
+			p.preprocesorValues.set(key, values.get(key));
+		var program = p.parseString(x);
+		var interp = new hscript.Interp();
+		assertEquals(v, interp.execute(program), pos);
+	}
+
 	function test():Void {
 		assertScript("0",0);
+		assertPreprocessed('#if true\n1\n#else\n2\n#end', 1, new Map());
+		assertPreprocessed('#if FEATURE\n1\n#elseif OTHER\n2\n#else\n3\n#end', 2, ["OTHER" => true]);
+		assertPreprocessed('#if VERSION >= 4.0\n1\n#else\n2\n#end', 1, ["VERSION" => 4.3]);
+		assertPreprocessed('#if defined("FEATURE")\n1\n#else\n2\n#end', 1, ["FEATURE" => true]);
+		assertPreprocessed('#if OUTER\n#if INNER\n1\n#else\n2\n#end\n#else\n3\n#end', 2, ["OUTER" => true]);
 		assertScript("0xFF", 255);
 		#if !(php || python)
 			#if haxe3
